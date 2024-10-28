@@ -19,7 +19,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("Dividend Investment Projection Calculator")
+st.title("Dividend Investment Projection")
 
 col1, col2 = st.columns([1, 3])
 
@@ -86,9 +86,10 @@ contributions_pct = (final_contributions / total_investment) * 100
 dividends_pct = (final_dividends / total_investment) * 100
 appreciation_pct = (final_appreciation / total_investment) * 100
 
+total_return =  final_dividends + final_appreciation
 
 with col2:
-    st.subheader(f"Final Projected Total Value (Baseline): ${df_projection['Baseline'].iloc[-1]:,.2f}")
+    st.subheader(f"Capital Growth: ${total_return:,.2f}")
 
     col3, col4 = st.columns(2)
     col3.markdown(f"<p style='font-size:20px'><strong>Principal:</strong> ${final_principal:,.2f}</p>", unsafe_allow_html=True)
@@ -97,51 +98,83 @@ with col2:
     col4.markdown(f"<p style='font-size:20px'><strong>Appreciation:</strong> ${final_appreciation:,.2f}</p>", unsafe_allow_html=True)
 
     st.line_chart(df_projection, height=500)
+    st.subheader(f"Final Projected Total Value: ${df_projection['Baseline'].iloc[-1]:,.2f}")
 
     fig = go.Figure(data=[
-        go.Bar(
-            name="Principal",
-            x=[principal_pct],
-            y=["Investment Breakdown"],
-            orientation='h',
-            marker=dict(color='#1f77b4'),
-               text=f"Principal: ${final_principal:,.2f} ({principal_pct:.2f}%)", 
-            textposition='inside'
-        ),
-        go.Bar(
-            name="Contributions",
-            x=[contributions_pct],
-            y=["Investment Breakdown"],
-            orientation='h',
-            marker=dict(color='#ff7f0e'),
-            text=f"Contributions: ${final_contributions:,.2f} ({contributions_pct:.2f}%)",
-            textposition='inside'
-        ),
-        go.Bar(
-            name="Dividends",
-            x=[dividends_pct],
-            y=["Investment Breakdown"],
-            orientation='h',
-            marker=dict(color='#2ca02c'),
-            text=f"Dividends: ${final_dividends:,.2f} ({dividends_pct:.2f}%)", 
-            textposition='inside'
-        ),
-        go.Bar(
-            name="Appreciation",
-            x=[appreciation_pct],
-            y=["Investment Breakdown"],
-            orientation='h',
-            marker=dict(color='#d62728'),
-            text=f"Appreciation: ${final_appreciation:,.2f} ({appreciation_pct:.2f}%)", 
-            textposition='inside'
-        )
-    ])
+    go.Bar(
+        name="Principal",
+        x=[principal_pct],
+        y=["Portfolio Composition"],
+        orientation='h',
+        marker=dict(color='#4361EE'),
+        text=f"Principal: ${final_principal:,.0f} ({principal_pct:.1f}%)",
+        textposition='inside',
+        textfont=dict(size=14, color='white'),
+        hoverinfo='skip'
+    ),
+    go.Bar(
+        name="Contributions",
+        x=[contributions_pct],
+        y=["Portfolio Composition"],
+        orientation='h',
+        marker=dict(color='#3A0CA3'),
+        text=f"Contributions: ${final_contributions:,.0f} ({contributions_pct:.1f}%)",
+        textposition='inside',
+        textfont=dict(size=14, color='white'),
+        hoverinfo='skip'
+    ),
+    go.Bar(
+        name="Dividends",
+        x=[dividends_pct],
+        y=["Portfolio Composition"],
+        orientation='h',
+        marker=dict(color='#7209B7'),
+        text=f"Dividends: ${final_dividends:,.0f} ({dividends_pct:.1f}%)",
+        textposition='inside',
+        textfont=dict(size=14, color='white'),
+        hoverinfo='skip'
+    ),
+    go.Bar(
+        name="Appreciation",
+        x=[appreciation_pct],
+        y=["Portfolio Composition"],
+        orientation='h',
+        marker=dict(color='#F72585'),
+        text=f"Appreciation: ${final_appreciation:,.0f} ({appreciation_pct:.1f}%)",
+        textposition='inside',
+        textfont=dict(size=14, color='white'),
+        hoverinfo='skip'
+    )
+])
 
     fig.update_layout(
-        barmode='stack',
-        showlegend=True,
-        height=325
-    )
+    barmode='stack',
+    showlegend=True,
+    height=200,
+    margin=dict(l=20, r=20, t=20, b=20),
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    font=dict(size=12),
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="left",
+        x=0,
+        bgcolor='rgba(0,0,0,0)'
+    ),
+    xaxis=dict(
+        showgrid=False,
+        zeroline=False,
+        showticklabels=False,
+    ),
+    yaxis=dict(
+        showgrid=False,
+        zeroline=False,
+        showticklabels=False,
+    ),
+)
+    
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 df_projection["Total Shares"] = df_projection["Baseline"] 
@@ -149,7 +182,7 @@ df = pd.DataFrame({
     "Date": date_range,
     "Share Price": [f"${share_price:,.2f}" for _ in date_range],
     "Total Value": [f"${value:,.2f}" for value in df_projection["Baseline"]],
-    "Dividend Income": [f"${value * monthly_dividend_yields['Baseline']:,.2f}" for value in df_projection["Baseline"]],
+    "Monthly Dividend Income": [f"${value * monthly_dividend_yields['Baseline']:,.2f}" for value in df_projection["Baseline"]],
 })
 
 st.dataframe(df.set_index("Date"), use_container_width=True, hide_index=False)

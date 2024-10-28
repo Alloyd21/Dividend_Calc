@@ -1,6 +1,6 @@
-# Dividend Investment Projection Calculator
+# Dividend Investment Projection 
 
-This is a Dividend Investment Projection Calculator built using Streamlit. The app allows users to input details of their investment, including share price, dividend yield, appreciation rate, and additional contributions, to project future returns. The app provides projections for baseline, high, and low dividend yield scenarios, with visualisations of investment breakdowns and performance over time.
+This is a Dividend Investment Projection built using Streamlit. The app allows users to input details of their investment, including share price, dividend yield, appreciation rate, and additional contributions, to project future returns. The app provides projections for baseline, high, and low dividend yield scenarios, with visualisations of investment breakdowns and performance over time.
 
 ## Features
 
@@ -14,7 +14,7 @@ This is a Dividend Investment Projection Calculator built using Streamlit. The a
 
 ## Hosted App
 
-Try the app online: [Dividend Investment Projection Calculator](https://dividendcalc.streamlit.app/)
+Try the app online: [Dividend Investment Projection ](https://dividendcalc.streamlit.app/)
 
 ## Running Locally
 
@@ -23,7 +23,7 @@ To run this app locally, ensure you have Python and the required libraries insta
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/dividend-investment-calculator.git
+git clone https://github.com/Alloyd21/Dividend_Calc.git
 cd dividend-investment-calculator
 ```
 ### 2. Install Dependencies
