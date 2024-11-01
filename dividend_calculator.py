@@ -2,187 +2,262 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import altair as alt
 from datetime import datetime, timedelta
+from typing import Dict, List, Tuple
 
-st.set_page_config(layout="wide")
-
-st.markdown("""
-    <style>
-    /* Add spacing between inputs */
-    .stNumberInput, .stSelectbox, .stRadio {
-        margin-bottom: 20px;
-    }
-    /* Add padding at the bottom of the left column */
-    .css-1d391kg {
-        padding-bottom: 30px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("Dividend Investment Projection")
-
-col1, col2 = st.columns([1, 3])
-
-with col1:
-    share_price = st.number_input("Share Price ($)", min_value=0.01, value=13.73)
-    num_shares = st.number_input("Number of Shares", min_value=0.0, value=145.66)
-    holding_period = st.slider("Investment Period (Years)", min_value=1, max_value=30, value=10)
-    annual_dividend_yield = st.number_input("Annual Dividend Yield (%)", min_value=0.0, max_value=100.0, value=6.5)
-    stock_appreciation = st.number_input("Stock Appreciation Rate (%)", min_value=0.0, max_value=100.0, value=5.0)
-    dividend_growth_rate = st.number_input("Estimated Dividend Growth Rate (%)", min_value=0.0, max_value=100.0, value=2.0)
+class DividendCalculator:
+    def __init__(self):
+        self.setup_page_config()
+        self.setup_styles()
+        
+    def setup_page_config(self):
+        st.set_page_config(layout="wide")
+        
+    def setup_styles(self):
+        st.markdown("""
+            <style>
+            .stNumberInput, .stSelectbox, .stRadio { margin-bottom: 20px; }
+            .css-1d391kg { padding-bottom: 30px; }
+            </style>
+        """, unsafe_allow_html=True)
+        
+    def get_user_inputs(self) -> Tuple[Dict, float, int]:
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            inputs = {
+                'share_price': st.number_input("Share Price ($)", min_value=0.01, value=13.73),
+                'num_shares': st.number_input("Number of Shares", min_value=0.0, value=145.66),
+                'holding_period': st.slider("Investment Period (Years)", min_value=1, max_value=30, value=15),
+                'annual_dividend_yield': st.number_input("Annual Dividend Yield (%)", min_value=0.0, max_value=100.0, value=6.5),
+                'stock_appreciation': st.number_input("Stock Appreciation Rate (%)", min_value=0.0, max_value=100.0, value=5.0),
+                'dividend_growth_rate': st.number_input("Estimated Dividend Growth Rate (%)", min_value=0.0, max_value=100.0, value=2.0),
+                'additional_contribution': st.number_input("Annual Contribution ($)", min_value=0, step=1000, value=2000),
+                'contribution_frequency': st.selectbox("Contribution Frequency", ["Monthly", "Quarterly", "Annually"]),
+                'reinvest_dividends': st.radio("Reinvest Dividends?", ["Yes", "No"]) == "Yes"
+            }
+            
+        return inputs, col2, inputs['holding_period']
     
-
-    additional_contribution = st.number_input("Annual Contribution ($)", min_value=0, step=1000, value=2000)
-    contribution_frequency = st.selectbox("Contribution Frequency", ["Monthly", "Quarterly", "Annually"])
-    reinvest_dividends = st.radio("Reinvest Dividends?", ["Yes", "No"]) == "Yes"
-
-contribution_multiplier = {"Monthly": 12, "Quarterly": 4, "Annually": 1}[contribution_frequency]
-monthly_contribution = additional_contribution / contribution_multiplier
-monthly_stock_appreciation = (1 + stock_appreciation / 100) ** (1 / 12) - 1
-monthly_dividend_growth = (1 + dividend_growth_rate / 100) ** (1 / 12) - 1
-
-monthly_dividend_yields = {
-    "Baseline": (annual_dividend_yield / 12) / 100,
-    "High": ((annual_dividend_yield + 1.5) / 12) / 100,
-    "Low": ((annual_dividend_yield - 1.5) / 12) / 100
-}
-
-projection_data = {"Baseline": [], "High": [], "Low": []}
-
-for label, initial_yield in monthly_dividend_yields.items():
-    total_shares = num_shares
-    total_value = start_value = share_price * num_shares
-    adj_dividend_yield = initial_yield  
-    adj_share_price = share_price
-
-    for month in range(holding_period * 12):
-        if month > 0:
-            adj_dividend_yield *= (1 + monthly_dividend_growth)
-        monthly_dividend = total_value * adj_dividend_yield
-        if reinvest_dividends:
-            total_shares += monthly_dividend / adj_share_price
-        if (month + 1) % (12 / contribution_multiplier) == 0:
-            new_shares_from_contribution = monthly_contribution / adj_share_price
-            total_shares += new_shares_from_contribution
-        adj_share_price *= (1 + monthly_stock_appreciation)
-        total_value = total_shares * adj_share_price
-        projection_data[label].append(total_value)
-date_range = [datetime.today() + timedelta(days=30 * i) for i in range(holding_period * 12)]
-df_projection = pd.DataFrame({
-    "Date": date_range,
-    "Baseline": projection_data["Baseline"],
-    "High": projection_data["High"],
-    "Low": projection_data["Low"]
-}).set_index("Date")
-
-final_principal = start_value
-final_contributions = additional_contribution * holding_period
-final_dividends = sum(projection_data["Baseline"]) * monthly_dividend_yields["Baseline"]
-final_appreciation = df_projection["Baseline"].iloc[-1] - final_principal - final_contributions - final_dividends
-
-total_investment = final_principal + final_contributions + final_dividends + final_appreciation
-principal_pct = (final_principal / total_investment) * 100
-contributions_pct = (final_contributions / total_investment) * 100
-dividends_pct = (final_dividends / total_investment) * 100
-appreciation_pct = (final_appreciation / total_investment) * 100
-
-total_return =  final_dividends + final_appreciation
-
-with col2:
-    st.subheader(f"Capital Growth: ${total_return:,.2f}")
-
-    col3, col4 = st.columns(2)
-    col3.markdown(f"<p style='font-size:20px'><strong>Principal:</strong> ${final_principal:,.2f}</p>", unsafe_allow_html=True)
-    col3.markdown(f"<p style='font-size:20px'><strong>Contributions:</strong> ${final_contributions:,.2f}</p>", unsafe_allow_html=True)
-    col4.markdown(f"<p style='font-size:20px'><strong>Dividends:</strong> ${final_dividends:,.2f}</p>", unsafe_allow_html=True)
-    col4.markdown(f"<p style='font-size:20px'><strong>Appreciation:</strong> ${final_appreciation:,.2f}</p>", unsafe_allow_html=True)
-
-    st.line_chart(df_projection, height=500)
-    st.subheader(f"Final Projected Total Value: ${df_projection['Baseline'].iloc[-1]:,.2f}")
-
-    fig = go.Figure(data=[
-    go.Bar(
-        name="Principal",
-        x=[principal_pct],
-        y=["Portfolio Composition"],
-        orientation='h',
-        marker=dict(color='#4361EE'),
-        text=f"Principal: ${final_principal:,.0f} ({principal_pct:.1f}%)",
-        textposition='inside',
-        textfont=dict(size=14, color='white'),
-        hoverinfo='skip'
-    ),
-    go.Bar(
-        name="Contributions",
-        x=[contributions_pct],
-        y=["Portfolio Composition"],
-        orientation='h',
-        marker=dict(color='#3A0CA3'),
-        text=f"Contributions: ${final_contributions:,.0f} ({contributions_pct:.1f}%)",
-        textposition='inside',
-        textfont=dict(size=14, color='white'),
-        hoverinfo='skip'
-    ),
-    go.Bar(
-        name="Dividends",
-        x=[dividends_pct],
-        y=["Portfolio Composition"],
-        orientation='h',
-        marker=dict(color='#7209B7'),
-        text=f"Dividends: ${final_dividends:,.0f} ({dividends_pct:.1f}%)",
-        textposition='inside',
-        textfont=dict(size=14, color='white'),
-        hoverinfo='skip'
-    ),
-    go.Bar(
-        name="Appreciation",
-        x=[appreciation_pct],
-        y=["Portfolio Composition"],
-        orientation='h',
-        marker=dict(color='#F72585'),
-        text=f"Appreciation: ${final_appreciation:,.0f} ({appreciation_pct:.1f}%)",
-        textposition='inside',
-        textfont=dict(size=14, color='white'),
-        hoverinfo='skip'
-    )
-])
-
-    fig.update_layout(
-    barmode='stack',
-    showlegend=True,
-    height=200,
-    margin=dict(l=20, r=20, t=20, b=20),
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    font=dict(size=12),
-    legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=1.02,
-        xanchor="left",
-        x=0,
-        bgcolor='rgba(0,0,0,0)'
-    ),
-    xaxis=dict(
-        showgrid=False,
-        zeroline=False,
-        showticklabels=False,
-    ),
-    yaxis=dict(
-        showgrid=False,
-        zeroline=False,
-        showticklabels=False,
-    ),
-)
+    def calculate_monthly_rates(self, inputs: Dict) -> Tuple[float, float, float, Dict[str, float]]:
+        contribution_multiplier = {"Monthly": 12, "Quarterly": 4, "Annually": 1}[inputs['contribution_frequency']]
+        monthly_contribution = inputs['additional_contribution'] / contribution_multiplier
+        monthly_stock_appreciation = (1 + inputs['stock_appreciation'] / 100) ** (1/12) - 1
+        monthly_dividend_growth = (1 + inputs['dividend_growth_rate'] / 100) ** (1/12) - 1
+        
+        monthly_dividend_yields = {
+            "Baseline": (inputs['annual_dividend_yield'] / 12) / 100,
+            "High": ((inputs['annual_dividend_yield'] + 1.5) / 12) / 100,
+            "Low": ((inputs['annual_dividend_yield'] - 1.5) / 12) / 100
+        }
+        
+        return monthly_contribution, monthly_stock_appreciation, monthly_dividend_growth, monthly_dividend_yields
     
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    def project_investment(self, inputs: Dict, monthly_rates: Tuple) -> Tuple[Dict[str, List[float]], float, float, float, float]:
+        monthly_contribution, monthly_stock_appreciation, monthly_dividend_growth, monthly_dividend_yields = monthly_rates
+        projection_data = {"Baseline": [], "High": [], "Low": []}
+        
+        for label, initial_yield in monthly_dividend_yields.items():
+            total_shares = inputs['num_shares']
+            total_value = start_value = inputs['share_price'] * inputs['num_shares']
+            adj_dividend_yield = initial_yield
+            adj_share_price = inputs['share_price']
+            
+            for month in range(inputs['holding_period'] * 12):
+                if month > 0:
+                    adj_dividend_yield *= (1 + monthly_dividend_growth)
+                monthly_dividend = total_value * adj_dividend_yield
+                
+                if inputs['reinvest_dividends']:
+                    total_shares += monthly_dividend / adj_share_price
+                    
+                contribution_multiplier = {"Monthly": 12, "Quarterly": 4, "Annually": 1}[inputs['contribution_frequency']]
+                if (month + 1) % (12 / contribution_multiplier) == 0:
+                    total_shares += monthly_contribution / adj_share_price
+                    
+                adj_share_price *= (1 + monthly_stock_appreciation)
+                total_value = total_shares * adj_share_price
+                projection_data[label].append(total_value)
+                
+        final_principal = start_value
+        final_contributions = inputs['additional_contribution'] * inputs['holding_period']
+        final_dividends = sum(projection_data["Baseline"]) * monthly_dividend_yields["Baseline"]
+        final_appreciation = projection_data["Baseline"][-1] - final_principal - final_contributions - final_dividends
+        
+        return projection_data, final_principal, final_contributions, final_dividends, final_appreciation
+    
+    def create_projection_dataframe(self, projection_data: Dict[str, List[float]], holding_period: int) -> pd.DataFrame:
+        date_range = [datetime.today() + timedelta(days=30 * i) for i in range(holding_period * 12)]
+        return pd.DataFrame({
+            "Date": date_range,
+            "Baseline": projection_data["Baseline"],
+            "High": projection_data["High"],
+            "Low": projection_data["Low"]
+        }).set_index("Date")
+    
+    def create_altair_chart(self, df_projection: pd.DataFrame) -> alt.Chart:
 
-df_projection["Total Shares"] = df_projection["Baseline"] 
-df = pd.DataFrame({
-    "Date": date_range,
-    "Share Price": [f"${share_price:,.2f}" for _ in date_range],
-    "Total Value": [f"${value:,.2f}" for value in df_projection["Baseline"]],
-    "Monthly Dividend Income": [f"${value * monthly_dividend_yields['Baseline']:,.2f}" for value in df_projection["Baseline"]],
-})
+        df_melted = df_projection.reset_index().melt(
+            id_vars=['Date'],
+            value_vars=['Baseline', 'High', 'Low'],
+            var_name='Scenario',
+            value_name='Value'
+        )
+        
 
-st.dataframe(df.set_index("Date"), use_container_width=True, hide_index=False)
+        hover = alt.selection_point(
+            fields=['Date'],
+            nearest=True,
+            on='mouseover',
+            empty='none',
+             clear='mouseout' 
+        )
+        
+
+        base = alt.Chart(df_melted).encode(
+            x=alt.X('Date:T', axis=alt.Axis(title='Date', format='%Y-%m')),
+            y=alt.Y('Value:Q', 
+                   axis=alt.Axis(title='Portfolio Value ($)', format=',.0f'),
+                   scale=alt.Scale(zero=False)),
+            color=alt.Color('Scenario:N', 
+                          scale=alt.Scale(
+                              domain=['Baseline', 'High', 'Low'],
+                              range=['#4361EE', '#7209B7', '#F72585']
+                          ))
+        )
+        
+
+        lines = base.mark_line().encode(
+            opacity=alt.condition(hover, alt.value(1), alt.value(0.5))
+        )
+        
+
+        points = base.mark_circle(size=100).encode(
+            opacity=alt.condition(hover, alt.value(1), alt.value(0))
+        ).add_params(hover)
+        
+
+        tooltips = alt.layer(
+            lines,
+            points,
+            base.mark_rule(color='gray').encode(
+                x='Date:T'
+            ).transform_filter(hover),
+            base.mark_text(align='left', dx=5, dy=-5).encode(
+                text=alt.Text('Value:Q', format='$,.0f'),
+                opacity=alt.condition(hover, alt.value(1), alt.value(0))
+            )
+        )
+        
+        chart = tooltips.properties(
+            width='container',
+            height=500
+        ).configure_axis(
+            grid=True,
+            gridOpacity=0.2
+        ).configure_view(
+            strokeWidth=0
+        )
+        
+        return chart
+    
+    def create_portfolio_composition_chart(self, values: Tuple[float, float, float, float]) -> go.Figure:
+        final_principal, final_contributions, final_dividends, final_appreciation = values
+        total_investment = sum(values)
+        
+        percentages = [v/total_investment * 100 for v in values]
+        colors = ['#4361EE', '#3A0CA3', '#7209B7', '#F72585']
+        names = ['Principal', 'Contributions', 'Dividends', 'Appreciation']
+        
+        fig = go.Figure()
+        
+        for i, (name, pct, value, color) in enumerate(zip(names, percentages, values, colors)):
+            fig.add_trace(go.Bar(
+                name=name,
+                x=[pct],
+                y=["Portfolio Composition"],
+                orientation='h',
+                marker=dict(color=color),
+                text=f"{name}: ${value:,.0f} ({pct:.1f}%)",
+                textposition='inside',
+                textfont=dict(size=14, color='white'),
+                hoverinfo='skip'
+            ))
+            
+        fig.update_layout(
+            barmode='stack',
+            showlegend=True,
+            height=200,
+            margin=dict(l=20, r=20, t=20, b=20),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(size=12),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="left",
+                x=0,
+                bgcolor='rgba(0,0,0,0)'
+            ),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+        )
+        
+        return fig
+    
+    def display_results(self, col2, df_projection: pd.DataFrame, values: Tuple[float, float, float, float],
+                       monthly_dividend_yields: Dict[str, float], share_price: float):
+        final_principal, final_contributions, final_dividends, final_appreciation = values
+        total_return = final_dividends + final_appreciation
+        
+        with col2:
+            st.subheader(f"Capital Growth: ${total_return:,.2f}")
+            
+            col3, col4 = st.columns(2)
+            col3.markdown(f"<p style='font-size:20px'><strong>Principal:</strong> ${final_principal:,.2f}</p>", unsafe_allow_html=True)
+            col3.markdown(f"<p style='font-size:20px'><strong>Contributions:</strong> ${final_contributions:,.2f}</p>", unsafe_allow_html=True)
+            col4.markdown(f"<p style='font-size:20px'><strong>Dividends:</strong> ${final_dividends:,.2f}</p>", unsafe_allow_html=True)
+            col4.markdown(f"<p style='font-size:20px'><strong>Appreciation:</strong> ${final_appreciation:,.2f}</p>", unsafe_allow_html=True)
+            
+            chart = self.create_altair_chart(df_projection)
+            st.altair_chart(chart, use_container_width=True)
+            
+            st.subheader(f"Final Projected Total Value: ${df_projection['Baseline'].iloc[-1]:,.2f}")
+            
+            fig = self.create_portfolio_composition_chart(values)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            
+            self.display_detailed_table(df_projection, monthly_dividend_yields, share_price)
+    
+    def display_detailed_table(self, df_projection: pd.DataFrame, monthly_dividend_yields: Dict[str, float], share_price: float):
+        date_range = df_projection.index
+        df = pd.DataFrame({
+            "Date": date_range,
+            "Share Price": [f"${share_price:,.2f}" for _ in date_range],
+            "Total Value": [f"${value:,.2f}" for value in df_projection["Baseline"]],
+            "Monthly Dividend Income": [f"${value * monthly_dividend_yields['Baseline']:,.2f}" for value in df_projection["Baseline"]],
+        })
+        st.dataframe(df.set_index("Date"), use_container_width=True, hide_index=False)
+    
+    def run(self):
+        st.title("Dividend Investment Projection")
+        
+
+        inputs, col2, holding_period = self.get_user_inputs()
+        
+
+        monthly_rates = self.calculate_monthly_rates(inputs)
+        
+
+        projection_data, *values = self.project_investment(inputs, monthly_rates)
+        
+
+        df_projection = self.create_projection_dataframe(projection_data, holding_period)
+
+        self.display_results(col2, df_projection, values, monthly_rates[3], inputs['share_price'])
+
+if __name__ == "__main__":
+    calculator = DividendCalculator()
+    calculator.run()
