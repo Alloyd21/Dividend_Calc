@@ -26,9 +26,59 @@ class DividendCalculator:
         col1, col2 = st.columns([1, 3])
         
         with col1:
+            share_price = st.number_input("Share Price ($)", min_value=0.01, value=13.73)
+            
+            share_col, principal_col = st.columns(2)
+
+            if 'num_shares' not in st.session_state:
+                st.session_state.num_shares = 145.66
+            if 'principal_value' not in st.session_state:
+                st.session_state.principal_value = share_price * 145.66
+            if 'last_modified' not in st.session_state:
+                st.session_state.last_modified = 'shares'
+                
+            def update_principal():
+                if st.session_state.num_shares != st.session_state.principal_value / share_price:
+                    st.session_state.principal_value = share_price * st.session_state.num_shares
+                    st.session_state.last_modified = 'shares'
+            
+            def update_shares():
+                if st.session_state.principal_value != st.session_state.num_shares * share_price:
+                    st.session_state.num_shares = st.session_state.principal_value / share_price
+                    st.session_state.last_modified = 'principal'
+            
+            with share_col:
+                num_shares = st.number_input(
+                    "Number of Shares",
+                    min_value=0.0,
+                    value=st.session_state.num_shares,
+                    key='num_shares',
+                    on_change=update_principal
+                )
+            
+            with principal_col:
+                principal_value = st.number_input(
+                    "Principal Value ($)",
+                    min_value=0.0,
+                    value=st.session_state.principal_value,
+                    key='principal_value',
+                    on_change=update_shares,
+                    
+                )
+            
+            if 'previous_share_price' not in st.session_state:
+                st.session_state.previous_share_price = share_price
+            
+            if st.session_state.previous_share_price != share_price:
+                if st.session_state.last_modified == 'shares':
+                    st.session_state.principal_value = share_price * st.session_state.num_shares
+                else:
+                    st.session_state.num_shares = st.session_state.principal_value / share_price
+                st.session_state.previous_share_price = share_price
+            
             inputs = {
-                'share_price': st.number_input("Share Price ($)", min_value=0.01, value=13.73),
-                'num_shares': st.number_input("Number of Shares", min_value=0.0, value=145.66),
+                'share_price': share_price,
+                'num_shares': st.session_state.num_shares,
                 'holding_period': st.slider("Investment Period (Years)", min_value=1, max_value=30, value=15),
                 'annual_dividend_yield': st.number_input("Annual Dividend Yield (%)", min_value=0.0, max_value=100.0, value=6.5),
                 'stock_appreciation': st.number_input("Stock Appreciation Rate (%)", min_value=0.0, max_value=100.0, value=5.0),
@@ -97,7 +147,6 @@ class DividendCalculator:
         }).set_index("Date")
     
     def create_altair_chart(self, df_projection: pd.DataFrame) -> alt.Chart:
-
         df_melted = df_projection.reset_index().melt(
             id_vars=['Date'],
             value_vars=['Baseline', 'High', 'Low'],
@@ -105,16 +154,14 @@ class DividendCalculator:
             value_name='Value'
         )
         
-
         hover = alt.selection_point(
             fields=['Date'],
             nearest=True,
             on='mouseover',
             empty='none',
-             clear='mouseout' 
+            clear='mouseout'
         )
         
-
         base = alt.Chart(df_melted).encode(
             x=alt.X('Date:T', axis=alt.Axis(title='Date', format='%Y-%m')),
             y=alt.Y('Value:Q', 
@@ -127,17 +174,14 @@ class DividendCalculator:
                           ))
         )
         
-
         lines = base.mark_line().encode(
             opacity=alt.condition(hover, alt.value(1), alt.value(0.5))
         )
         
-
         points = base.mark_circle(size=100).encode(
             opacity=alt.condition(hover, alt.value(1), alt.value(0))
         ).add_params(hover)
         
-
         tooltips = alt.layer(
             lines,
             points,
@@ -153,6 +197,84 @@ class DividendCalculator:
         chart = tooltips.properties(
             width='container',
             height=500
+        ).configure_axis(
+            grid=True,
+            gridOpacity=0.2
+        ).configure_view(
+            strokeWidth=0
+        )
+        
+        return chart
+    
+    def calculate_yearly_dividends(self, projection_data: List[float], monthly_dividend_yields: Dict[str, float]) -> List[float]:
+        """Calculate yearly dividend income from monthly projections."""
+        yearly_dividends = []
+        for year in range(len(projection_data) // 12):
+            year_start = year * 12
+            year_end = (year + 1) * 12
+            year_values = projection_data[year_start:year_end]
+            year_total = sum(value * monthly_dividend_yields['Baseline'] for value in year_values)
+            yearly_dividends.append(year_total)
+        return yearly_dividends
+
+    def create_dividend_income_chart(self, projection_data: Dict[str, List[float]], monthly_dividend_yields: Dict[str, float]) -> alt.Chart:
+
+        yearly_dividends = self.calculate_yearly_dividends(projection_data["Baseline"], monthly_dividend_yields)
+        
+        df_dividends = pd.DataFrame({
+            'YearNum': range(1, len(yearly_dividends) + 1),
+            'Year': [f"Year {i}" for i in range(1, len(yearly_dividends) + 1)],
+            'Dividend': yearly_dividends
+        })
+        
+        hover = alt.selection_point(
+            fields=['Year'],
+            nearest=True,
+            on='mouseover',
+            empty='none',
+            clear='mouseout'
+        )
+        
+        base = alt.Chart(df_dividends).encode(
+            x=alt.X('Year:N', 
+                    axis=alt.Axis(
+                        labelAngle=-45,
+                        title=None
+                    ),
+                    sort=df_dividends['Year'].tolist()
+            ),
+            y=alt.Y('Dividend:Q',
+                    axis=alt.Axis(
+                        title='Dividend Income ($)',
+                        format='$,.0f',
+                        grid=True,
+                        gridOpacity=0.2
+                    ))
+        )
+        
+        bars = base.mark_bar(color='#7209B7').encode(
+            opacity=alt.condition(hover, alt.value(1), alt.value(0.8))
+        )
+        
+        text = base.mark_text(
+            align='center',
+            baseline='bottom',
+            dy=-5,
+            fontSize=12
+        ).encode(
+            text=alt.Text('Dividend:Q', format='$,.0f'),
+            opacity=alt.condition(hover, alt.value(1), alt.value(0))
+        )
+        
+        chart = alt.layer(bars, text).add_params(hover).properties(
+            title=alt.TitleParams(
+                text='Yearly Dividend Income',
+                anchor='middle',
+                fontSize=16,
+                dy=-10
+            ),
+            width='container',
+            height=450
         ).configure_axis(
             grid=True,
             gridOpacity=0.2
@@ -226,8 +348,14 @@ class DividendCalculator:
             
             st.subheader(f"Final Projected Total Value: ${df_projection['Baseline'].iloc[-1]:,.2f}")
             
-            fig = self.create_portfolio_composition_chart(values)
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            fig_portfolio = self.create_portfolio_composition_chart(values)
+            st.plotly_chart(fig_portfolio, use_container_width=True, config={'displayModeBar': False})
+            
+            dividend_chart = self.create_dividend_income_chart(
+                {"Baseline": df_projection["Baseline"].tolist()}, 
+                monthly_dividend_yields
+            )
+            st.altair_chart(dividend_chart, use_container_width=True)
             
             self.display_detailed_table(df_projection, monthly_dividend_yields, share_price)
     
@@ -243,17 +371,13 @@ class DividendCalculator:
     
     def run(self):
         st.title("Dividend Investment Projection")
-        
 
         inputs, col2, holding_period = self.get_user_inputs()
         
-
         monthly_rates = self.calculate_monthly_rates(inputs)
-        
 
         projection_data, *values = self.project_investment(inputs, monthly_rates)
         
-
         df_projection = self.create_projection_dataframe(projection_data, holding_period)
 
         self.display_results(col2, df_projection, values, monthly_rates[3], inputs['share_price'])
