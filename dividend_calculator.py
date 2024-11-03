@@ -165,10 +165,20 @@ class DividendCalculator:
         return projection_data, final_principal, final_contributions, final_dividends, final_appreciation
 
     
-    def create_projection_dataframe(self, projection_data: Dict[str, List[float]], holding_period: int) -> pd.DataFrame:
+    def create_projection_dataframe(self, projection_data: Dict[str, List[float]], holding_period: int, 
+                                  initial_share_price: float, monthly_stock_appreciation: float) -> pd.DataFrame:
         date_range = [datetime.today() + timedelta(days=30 * i) for i in range(holding_period * 12)]
+        
+        # Calculate share price over time
+        share_prices = []
+        current_share_price = initial_share_price
+        for _ in range(holding_period * 12):
+            share_prices.append(current_share_price)
+            current_share_price *= (1 + monthly_stock_appreciation)
+        
         return pd.DataFrame({
             "Date": date_range,
+            "Share Price": share_prices,
             "Baseline": projection_data["Baseline"],
             "High": projection_data["High"],
             "Low": projection_data["Low"]
@@ -404,11 +414,13 @@ class DividendCalculator:
             )
             st.altair_chart(dividend_chart, use_container_width=True)
             
-            self.display_detailed_table(df_projection, monthly_dividend_yields, share_price, dividend_frequency)
+            # Updated to match the new method signature
+            self.display_detailed_table(df_projection, monthly_dividend_yields, dividend_frequency)
+    
     
     
     def display_detailed_table(self, df_projection: pd.DataFrame, monthly_dividend_yields: Dict[str, float], 
-                             share_price: float, dividend_frequency: str):
+                             dividend_frequency: str):
         date_range = df_projection.index
         months_between_payments = {"Monthly": 1, "Quarterly": 3, "Annually": 12}[dividend_frequency]
         
@@ -422,7 +434,7 @@ class DividendCalculator:
         
         df = pd.DataFrame({
             "Date": date_range,
-            "Share Price": [f"${share_price:,.2f}" for _ in date_range],
+            "Share Price": [f"${price:,.2f}" for price in df_projection["Share Price"]],
             "Total Value": [f"${value:,.2f}" for value in df_projection["Baseline"]],
             "Dividend Income": [f"${value:,.2f}" for value in monthly_dividends],
         })
@@ -430,16 +442,33 @@ class DividendCalculator:
     
     def run(self):
         st.title("Dividend Investment Projection")
-
+        
+        # Get user inputs
         inputs, col2, holding_period = self.get_user_inputs()
         
+        # Calculate monthly rates
         monthly_rates = self.calculate_monthly_rates(inputs)
-
+        
+        # Project investment
         projection_data, *values = self.project_investment(inputs, monthly_rates)
         
-        df_projection = self.create_projection_dataframe(projection_data, holding_period)
-
-        self.display_results(col2, df_projection, values, monthly_rates[3], inputs['share_price'], inputs['dividend_frequency'])
+        # Create projection dataframe with share price progression
+        df_projection = self.create_projection_dataframe(
+            projection_data, 
+            holding_period,
+            inputs['share_price'],
+            monthly_rates[1]  # monthly_stock_appreciation
+        )
+        
+        # Display results
+        self.display_results(
+            col2, 
+            df_projection, 
+            values, 
+            monthly_rates[3], 
+            inputs['share_price'],
+            inputs['dividend_frequency']
+        )
 
 if __name__ == "__main__":
     calculator = DividendCalculator()
