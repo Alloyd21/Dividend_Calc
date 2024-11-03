@@ -27,26 +27,31 @@ class DividendCalculator:
         
         with col1:
             share_price = st.number_input("Share Price ($)", min_value=0.01, value=13.73)
-
+            
+            # Initialize session state if not already done
             if 'initialized' not in st.session_state:
                 st.session_state.num_shares = 145.66
                 st.session_state.principal_value = share_price * 145.66
                 st.session_state.last_modified = 'shares'
                 st.session_state.previous_share_price = share_price
                 st.session_state.initialized = True
-
+            
+            # Create columns for share count and principal value
             share_col, principal_col = st.columns(2)
             
+            # Update function for number of shares
             def update_principal():
                 if st.session_state.num_shares != st.session_state.principal_value / share_price:
                     st.session_state.principal_value = share_price * st.session_state.num_shares
                     st.session_state.last_modified = 'shares'
             
+            # Update function for principal value
             def update_shares():
                 if st.session_state.principal_value != st.session_state.num_shares * share_price:
                     st.session_state.num_shares = st.session_state.principal_value / share_price
                     st.session_state.last_modified = 'principal'
             
+            # Create the input fields without default values
             with share_col:
                 num_shares = st.number_input(
                     "Number of Shares",
@@ -63,6 +68,7 @@ class DividendCalculator:
                     on_change=update_shares
                 )
             
+            # Update values based on share price changes
             if st.session_state.previous_share_price != share_price:
                 if st.session_state.last_modified == 'shares':
                     st.session_state.principal_value = share_price * st.session_state.num_shares
@@ -70,6 +76,14 @@ class DividendCalculator:
                     st.session_state.num_shares = st.session_state.principal_value / share_price
                 st.session_state.previous_share_price = share_price
             
+            # Add dividend payment frequency radio buttons
+            dividend_frequency = st.radio(
+                "Dividend Payment Frequency",
+                ["Monthly", "Quarterly", "Annually"],
+                index=1  # Default to Quarterly
+            )
+            
+            # Rest of the inputs
             inputs = {
                 'share_price': share_price,
                 'num_shares': st.session_state.num_shares,
@@ -79,10 +93,12 @@ class DividendCalculator:
                 'dividend_growth_rate': st.number_input("Estimated Dividend Growth Rate (%)", min_value=0.0, max_value=100.0, value=2.0),
                 'additional_contribution': st.number_input("Annual Contribution ($)", min_value=0, step=1000, value=2000),
                 'contribution_frequency': st.selectbox("Contribution Frequency", ["Monthly", "Quarterly", "Annually"]),
+                'dividend_frequency': dividend_frequency,
                 'reinvest_dividends': st.radio("Reinvest Dividends?", ["Yes", "No"]) == "Yes"
             }
             
         return inputs, col2, inputs['holding_period']
+
     
     def calculate_monthly_rates(self, inputs: Dict) -> Tuple[float, float, float, Dict[str, float]]:
         contribution_multiplier = {"Monthly": 12, "Quarterly": 4, "Annually": 1}[inputs['contribution_frequency']]
@@ -90,17 +106,28 @@ class DividendCalculator:
         monthly_stock_appreciation = (1 + inputs['stock_appreciation'] / 100) ** (1/12) - 1
         monthly_dividend_growth = (1 + inputs['dividend_growth_rate'] / 100) ** (1/12) - 1
         
+        # Adjust dividend yields based on payment frequency
+        dividend_payments_per_year = {
+            "Monthly": 12,
+            "Quarterly": 4,
+            "Annually": 1
+        }[inputs['dividend_frequency']]
+        
+        base_yield = inputs['annual_dividend_yield'] / dividend_payments_per_year / 100
+        
         monthly_dividend_yields = {
-            "Baseline": (inputs['annual_dividend_yield'] / 12) / 100,
-            "High": ((inputs['annual_dividend_yield'] + 1.5) / 12) / 100,
-            "Low": ((inputs['annual_dividend_yield'] - 1.5) / 12) / 100
+            "Baseline": base_yield,
+            "High": base_yield * 1.15,  # 15% higher
+            "Low": base_yield * 0.85    # 15% lower
         }
         
-        return monthly_contribution, monthly_stock_appreciation, monthly_dividend_growth, monthly_dividend_yields
+        return monthly_contribution, monthly_stock_appreciation, monthly_dividend_growth, monthly_dividend_yields, dividend_payments_per_year
+
     
     def project_investment(self, inputs: Dict, monthly_rates: Tuple) -> Tuple[Dict[str, List[float]], float, float, float, float]:
-        monthly_contribution, monthly_stock_appreciation, monthly_dividend_growth, monthly_dividend_yields = monthly_rates
+        monthly_contribution, monthly_stock_appreciation, monthly_dividend_growth, monthly_dividend_yields, dividend_payments_per_year = monthly_rates
         projection_data = {"Baseline": [], "High": [], "Low": []}
+        months_between_payments = 12 // dividend_payments_per_year
         
         for label, initial_yield in monthly_dividend_yields.items():
             total_shares = inputs['num_shares']
@@ -111,25 +138,32 @@ class DividendCalculator:
             for month in range(inputs['holding_period'] * 12):
                 if month > 0:
                     adj_dividend_yield *= (1 + monthly_dividend_growth)
-                monthly_dividend = total_value * adj_dividend_yield
                 
-                if inputs['reinvest_dividends']:
-                    total_shares += monthly_dividend / adj_share_price
-                    
+                # Only pay dividends on the correct months based on frequency
+                if month % months_between_payments == 0:
+                    monthly_dividend = total_value * adj_dividend_yield
+                    if inputs['reinvest_dividends']:
+                        total_shares += monthly_dividend / adj_share_price
+                
                 contribution_multiplier = {"Monthly": 12, "Quarterly": 4, "Annually": 1}[inputs['contribution_frequency']]
                 if (month + 1) % (12 / contribution_multiplier) == 0:
                     total_shares += monthly_contribution / adj_share_price
-                    
+                
                 adj_share_price *= (1 + monthly_stock_appreciation)
                 total_value = total_shares * adj_share_price
                 projection_data[label].append(total_value)
-                
+        
         final_principal = start_value
         final_contributions = inputs['additional_contribution'] * inputs['holding_period']
-        final_dividends = sum(projection_data["Baseline"]) * monthly_dividend_yields["Baseline"]
+        
+        # Adjust dividend calculation based on payment frequency
+        dividend_months = [i for i in range(len(projection_data["Baseline"])) if i % months_between_payments == 0]
+        final_dividends = sum(projection_data["Baseline"][i] * monthly_dividend_yields["Baseline"] for i in dividend_months)
+        
         final_appreciation = projection_data["Baseline"][-1] - final_principal - final_contributions - final_dividends
         
         return projection_data, final_principal, final_contributions, final_dividends, final_appreciation
+
     
     def create_projection_dataframe(self, projection_data: Dict[str, List[float]], holding_period: int) -> pd.DataFrame:
         date_range = [datetime.today() + timedelta(days=30 * i) for i in range(holding_period * 12)]
@@ -200,20 +234,36 @@ class DividendCalculator:
         
         return chart
     
-    def calculate_yearly_dividends(self, projection_data: List[float], monthly_dividend_yields: Dict[str, float]) -> List[float]:
+    def calculate_yearly_dividends(self, projection_data: List[float], monthly_dividend_yields: Dict[str, float], 
+                                 dividend_frequency: str) -> List[float]:
         """Calculate yearly dividend income from monthly projections."""
+        months_between_payments = {
+            "Monthly": 1,
+            "Quarterly": 3,
+            "Annually": 12
+        }[dividend_frequency]
+        
         yearly_dividends = []
         for year in range(len(projection_data) // 12):
             year_start = year * 12
             year_end = (year + 1) * 12
             year_values = projection_data[year_start:year_end]
-            year_total = sum(value * monthly_dividend_yields['Baseline'] for value in year_values)
+            
+            # Only count dividend payments on the correct months
+            dividend_months = [i % 12 for i in range(year_start, year_end) if i % months_between_payments == 0]
+            year_total = sum(year_values[i] * monthly_dividend_yields['Baseline'] for i in dividend_months)
             yearly_dividends.append(year_total)
+        
         return yearly_dividends
 
-    def create_dividend_income_chart(self, projection_data: Dict[str, List[float]], monthly_dividend_yields: Dict[str, float]) -> alt.Chart:
-
-        yearly_dividends = self.calculate_yearly_dividends(projection_data["Baseline"], monthly_dividend_yields)
+    def create_dividend_income_chart(self, projection_data: Dict[str, List[float]], monthly_dividend_yields: Dict[str, float],
+                                   dividend_frequency: str) -> alt.Chart:
+        """Create an Altair bar chart showing yearly dividend income."""
+        yearly_dividends = self.calculate_yearly_dividends(
+            projection_data["Baseline"], 
+            monthly_dividend_yields,
+            dividend_frequency
+        )
         
         df_dividends = pd.DataFrame({
             'YearNum': range(1, len(yearly_dividends) + 1),
@@ -324,7 +374,7 @@ class DividendCalculator:
         return fig
     
     def display_results(self, col2, df_projection: pd.DataFrame, values: Tuple[float, float, float, float],
-                       monthly_dividend_yields: Dict[str, float], share_price: float):
+                       monthly_dividend_yields: Dict[str, float], share_price: float, dividend_frequency: str):
         final_principal, final_contributions, final_dividends, final_appreciation = values
         total_return = final_dividends + final_appreciation
         
@@ -342,24 +392,39 @@ class DividendCalculator:
             
             st.subheader(f"Final Projected Total Value: ${df_projection['Baseline'].iloc[-1]:,.2f}")
             
+            # Portfolio composition chart
             fig_portfolio = self.create_portfolio_composition_chart(values)
             st.plotly_chart(fig_portfolio, use_container_width=True, config={'displayModeBar': False})
             
+            # Yearly dividend income chart
             dividend_chart = self.create_dividend_income_chart(
                 {"Baseline": df_projection["Baseline"].tolist()}, 
-                monthly_dividend_yields
+                monthly_dividend_yields,
+                dividend_frequency
             )
             st.altair_chart(dividend_chart, use_container_width=True)
             
-            self.display_detailed_table(df_projection, monthly_dividend_yields, share_price)
+            self.display_detailed_table(df_projection, monthly_dividend_yields, share_price, dividend_frequency)
     
-    def display_detailed_table(self, df_projection: pd.DataFrame, monthly_dividend_yields: Dict[str, float], share_price: float):
+    
+    def display_detailed_table(self, df_projection: pd.DataFrame, monthly_dividend_yields: Dict[str, float], 
+                             share_price: float, dividend_frequency: str):
         date_range = df_projection.index
+        months_between_payments = {"Monthly": 1, "Quarterly": 3, "Annually": 12}[dividend_frequency]
+        
+        # Calculate dividend income based on frequency
+        monthly_dividends = []
+        for i, value in enumerate(df_projection["Baseline"]):
+            if i % months_between_payments == 0:
+                monthly_dividends.append(value * monthly_dividend_yields['Baseline'])
+            else:
+                monthly_dividends.append(0)
+        
         df = pd.DataFrame({
             "Date": date_range,
             "Share Price": [f"${share_price:,.2f}" for _ in date_range],
             "Total Value": [f"${value:,.2f}" for value in df_projection["Baseline"]],
-            "Monthly Dividend Income": [f"${value * monthly_dividend_yields['Baseline']:,.2f}" for value in df_projection["Baseline"]],
+            "Dividend Income": [f"${value:,.2f}" for value in monthly_dividends],
         })
         st.dataframe(df.set_index("Date"), use_container_width=True, hide_index=False)
     
@@ -374,7 +439,7 @@ class DividendCalculator:
         
         df_projection = self.create_projection_dataframe(projection_data, holding_period)
 
-        self.display_results(col2, df_projection, values, monthly_rates[3], inputs['share_price'])
+        self.display_results(col2, df_projection, values, monthly_rates[3], inputs['share_price'], inputs['dividend_frequency'])
 
 if __name__ == "__main__":
     calculator = DividendCalculator()
