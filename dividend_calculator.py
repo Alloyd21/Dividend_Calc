@@ -27,16 +27,16 @@ class DividendCalculator:
         
         with col1:
             share_price = st.number_input("Share Price ($)", min_value=0.01, value=13.73)
-            
-            share_col, principal_col = st.columns(2)
 
-            if 'num_shares' not in st.session_state:
+            if 'initialized' not in st.session_state:
                 st.session_state.num_shares = 145.66
-            if 'principal_value' not in st.session_state:
                 st.session_state.principal_value = share_price * 145.66
-            if 'last_modified' not in st.session_state:
                 st.session_state.last_modified = 'shares'
-                
+                st.session_state.previous_share_price = share_price
+                st.session_state.initialized = True
+
+            share_col, principal_col = st.columns(2)
+            
             def update_principal():
                 if st.session_state.num_shares != st.session_state.principal_value / share_price:
                     st.session_state.principal_value = share_price * st.session_state.num_shares
@@ -51,7 +51,6 @@ class DividendCalculator:
                 num_shares = st.number_input(
                     "Number of Shares",
                     min_value=0.0,
-                    value=st.session_state.num_shares,
                     key='num_shares',
                     on_change=update_principal
                 )
@@ -60,14 +59,9 @@ class DividendCalculator:
                 principal_value = st.number_input(
                     "Principal Value ($)",
                     min_value=0.0,
-                    value=st.session_state.principal_value,
                     key='principal_value',
-                    on_change=update_shares,
-                    
+                    on_change=update_shares
                 )
-            
-            if 'previous_share_price' not in st.session_state:
-                st.session_state.previous_share_price = share_price
             
             if st.session_state.previous_share_price != share_price:
                 if st.session_state.last_modified == 'shares':
